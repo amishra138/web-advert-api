@@ -1,6 +1,9 @@
 ﻿using Advert.API.Models;
+using Advert.API.Models.Messages;
 using Advert.API.Services;
+using Amazon.SimpleNotificationService;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -11,9 +14,11 @@ namespace Advert.API.Controllers
     public class Advert : ControllerBase
     {
         private readonly IAdvertStorageService _storageService;
-        public Advert(IAdvertStorageService storageService)
+        private readonly IConfiguration _configuration;
+        public Advert(IAdvertStorageService storageService, IConfiguration configuration)
         {
             _storageService = storageService;
+            _configuration = configuration;
         }
 
         [HttpPost]
@@ -26,7 +31,7 @@ namespace Advert.API.Controllers
             try
             {
                 recordId = await _storageService.Add(model);
-            }           
+            }
             catch (System.Exception ex)
             {
                 return StatusCode(500, ex.Message);
@@ -43,7 +48,8 @@ namespace Advert.API.Controllers
         {
             try
             {
-                 await _storageService.Confirm(model);
+                await _storageService.Confirm(model);
+                _ = RaiseAdvertConfirmedMessage(model);
             }
             catch (KeyNotFoundException ex)
             {
@@ -55,6 +61,21 @@ namespace Advert.API.Controllers
             }
 
             return StatusCode(201, new CreateAdvertResponse() { Id = model.Id });
+        }
+
+        private async Task RaiseAdvertConfirmedMessage(ConfirmModel model)
+        {
+            var arn = _configuration.GetValue<string>("TopicARN");
+
+            using (var client = new AmazonSimpleNotificationServiceClient())
+            {
+                var message = new AdvertConfirmedMessage()
+                {
+                    Id = model.Id,
+                    Title = "Advert Model Confirmed"
+                };
+                _ = await client.PublishAsync(arn, System.Text.Json.JsonSerializer.Serialize(message));
+            }
         }
     }
 }
